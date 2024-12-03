@@ -1,0 +1,12 @@
+rustc --version
+cargo test # run all test
+cargo test --test unit_test # run only unit_test.rs
+cargo test --test integration_test # run only unit_test.rs
+
+https://github.com/tmsdev82/sqlx-sqlite-basics-tutorial/blob/main/src/main.rs
+https://medium.com/rustaceans/getting-started-with-sqlx-and-sqlite-in-rust-895ae7fc01ae
+git remote set-url origin https://github.com/kodemetrics/demo_actix_sqlx.git
+
+# cargo run
+cargo watch -x run
+cargo watch -q -c -x 'run -q'
