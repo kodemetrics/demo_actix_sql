@@ -21,6 +21,7 @@ use crate::models::file_action::{FileAction, Movement};
 use crate::models::file_tb::{FileRecord,GetFileRecord};
 use serde_json::{json, Value};
 use sqlx::{Pool,query,query_as, Sqlite};
+use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::migrate::MigrateDatabase;
 
 use crate::utils::email_utils::EmailService;
@@ -207,6 +208,58 @@ async fn save_new_file(file: web::Json<FileRecord>, db: web::Data<Pool<Sqlite>>)
     }
 }
 
+#[get("/api/file/{file_no}")]
+async fn fetchFileByfileNumber(file_no: web::Path<String>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+    let fileno = file_no.into_inner();
+    let query = r#" SELECT * from file_tb where file_number = $1"#;
+    let result = sqlx::query_as::<_, GetFileRecord>(query)
+       .bind(fileno)
+       .fetch_one(db.get_ref())
+       .await
+       .unwrap();
+     web::Json(result)
+}
+
+#[put("/api/file")]
+async fn update_file(data: web::Json<GetFileRecord>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+    let file_data = data.into_inner();
+    let sql = r#"UPDATE file_tb SET user_id = $1,file_number = $2,owner_name = $3,lga = $4,
+    batch_number = $5,rack_number = $6,land_application_exists = $7,c_of_o_letter_exists = $8, r_of_o_letter_exists = $9,
+    lan_number = $10,phone_number = $11,remark = $12, file_condition = $13,number_of_pages = $14,location = $15,
+    application_date = $16,roo_date = $17,coo_date = $18 WHERE id = $19"#;
+    let result = query(sql)
+        .bind(file_data.user_id)
+        .bind(file_data.file_number)
+        .bind(file_data.owner_name)
+        .bind(file_data.lga)
+        .bind(file_data.batch_number)
+        .bind(file_data.rack_number)
+        .bind(file_data.land_application_exists)
+        .bind(file_data.c_of_o_letter_exists)
+        .bind(file_data.r_of_o_letter_exists)
+        .bind(file_data.lan_number)
+        .bind(file_data.phone_number)
+        .bind(file_data.remark)
+        .bind(file_data.file_condition)
+        .bind(file_data.number_of_pages)
+        .bind(file_data.location)
+        .bind(file_data.application_date)
+        .bind(file_data.roo_date)
+        .bind(file_data.coo_date)
+        .bind(file_data.id)
+       .execute(db.get_ref()) // Execute the query on the database
+       .await;
+   match result {
+        Ok(_) => HttpResponse::Ok().json("File updated successfully."),
+        Err(e) => {
+            eprintln!("Error updating user: {}", e);
+            HttpResponse::InternalServerError().json("Failed to update File.")
+        }
+    }
+}
+
+
+
 #[get("/api/files")]
 async fn fetch_files(db: web::Data<Pool<Sqlite>>) -> impl Responder {
     let response = sqlx::query_as::<_, FileRecord>("SELECT * FROM file_tb")
@@ -335,9 +388,16 @@ async fn main() -> std::io::Result<()> {
         println!("Database already exists");
     }
 
-    let pool = Pool::<Sqlite>::connect(database_url)
-        .await
-        .expect("Error connecting to the database");
+      // Configure the pool options
+     let pool = SqlitePoolOptions::new()
+         .max_connections(5)  // Set the maximum number of connections in the pool
+         .connect(database_url)
+         .await
+         .expect("Error connecting to the database");
+
+    // let pool = Pool::<Sqlite>::connect(database_url)
+    //     .await
+    //     .expect("Error connecting to the database");
 
     // Await the create_tables function if it is async
     // utils::seed_utils::create_tables(pool.clone()).await.unwrap();
@@ -390,9 +450,14 @@ async fn main() -> std::io::Result<()> {
             .service(save_file_movements)
 
             .service(fetch_files)
+            .service(fetchFileByfileNumber)
             .service(fetch_movements)
             .service(fetch_locations)
+            .service(update_file)
+
+
     })
+        // .workers(8)
         .bind(("0.0.0.0", port))?
         .run()
         .await

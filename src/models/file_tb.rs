@@ -44,5 +44,8 @@ pub struct GetFileRecord {
     pub remark: Option<String>, // Optional field
     pub file_condition: String, // This will be one of 'new', 'pending', 'approved', or 'rejected'
     pub number_of_pages: i32,
-    pub location: String
+    pub location: String,
+    pub application_date: String,
+    pub coo_date: String,
+    pub roo_date: String,
 }
