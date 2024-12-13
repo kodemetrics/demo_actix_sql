@@ -5,6 +5,7 @@ use sqlx::FromRow;
 
 #[derive(FromRow,Clone,Debug,serde::Serialize, serde::Deserialize)]
 pub struct FileRecord {
+    pub id: Option<i32>, 
     pub user_id: i32,
     pub file_number: String,
     pub owner_name: String,

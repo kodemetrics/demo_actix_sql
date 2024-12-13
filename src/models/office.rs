@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
 use chrono::{NaiveDateTime};
+use sqlx::FromRow;
 
-#[derive(Clone,Debug,serde::Serialize, serde::Deserialize)]
+#[derive(FromRow,Clone,Debug,serde::Serialize, serde::Deserialize)]
 pub struct Office {
-    id: i32,
-    name: String,
+    pub id: Option<i32>,
+    pub name: String,
+    pub unit_count: i32
 }
-
-
-
-
-

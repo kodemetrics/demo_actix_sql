@@ -19,6 +19,7 @@ use crate::models::error::APIError;
 use crate::models::user::{UserRoles, User,Login,NewUser,UpdateUser};
 use crate::models::file_action::{FileAction, Movement};
 use crate::models::file_tb::{FileRecord,GetFileRecord};
+use crate::models::office::Office;
 use serde_json::{json, Value};
 use sqlx::{Pool,query,query_as, Sqlite};
 use sqlx::sqlite::SqlitePoolOptions;
@@ -127,86 +128,135 @@ async fn update_user(data: web::Json<UpdateUser>, db: web::Data<Pool<Sqlite>>) -
     }
 }
 
+#[get("/api/report")]
+async fn getReport(db: web::Data<Pool<Sqlite>>) -> impl Responder {
+
+    let file_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM file_tb")
+           .fetch_one(db.get_ref())
+           .await
+           .unwrap();
+
+   let unit_count: Vec<Office> = sqlx::query_as(r#"
+            SELECT COUNT(*) as unit_count,to_office_id as id,name FROM file_actions AS f
+            JOIN office AS o ON f.to_office_id = o.id
+            group by to_office_id"#)
+          .fetch_all(db.get_ref())
+          .await
+          .unwrap();
+     let result = json!({"file_count":file_count.0, "unit_count":unit_count});
+
+     // HttpResponse::Ok().json("Report was generated successfully")
+     HttpResponse::Ok().json(result)
+}
+
 #[post("/api/files")]
 async fn save_new_file(file: web::Json<FileRecord>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+
+    let json_payload = file.clone();
     let file_data = file.into_inner(); // This gives you the actual FileRecord
-    let result = file_data.clone(); // Insert the file record into the database (example)
+    let file_number = &file_data.file_number;
 
     let file_number_exists = sqlx::query_as::<_, GetFileRecord>("SELECT * from file_tb where file_number = $1")
-       .bind(&result.file_number)
+       .bind(file_number)
        .fetch_optional(db.get_ref())
        .await;
-
-    print!("File Payload {:?}",file_data);
-    info!("File Payload {:?}",file_data);
-
-   if let Ok(Some(existing_file)) = file_number_exists {
-            if(existing_file.file_number ==  file_data.file_number){
-               // return   HttpResponse::InternalServerError().json(json!({"Error":format!("Database unique constraint failed: file number already exists")}))
-               return HttpResponse::Conflict()
-                .json(serde_json::json!({
-                    "status": 409,
-                    "message": "Database unique constraint failed: The file number already exists."
-                }))
-            }
-    }
-
-
-    let response = sqlx::query(r#"
-    INSERT INTO file_tb(user_id,file_number, owner_name,lga, batch_number, rack_number,
-     land_application_exists, c_of_o_letter_exists, r_of_o_letter_exists,
-     lan_number,phone_number,remark,file_condition,number_of_pages,location,application_date,roo_date,coo_date)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     "#)
-        .bind(file_data.user_id)
-        .bind(file_data.file_number)
-        .bind(file_data.owner_name)
-        .bind(file_data.lga)
-        .bind(file_data.batch_number)
-        .bind(file_data.rack_number)
-        .bind(file_data.land_application_exists)
-        .bind(file_data.c_of_o_letter_exists)
-        .bind(file_data.r_of_o_letter_exists)
-        .bind(file_data.lan_number)
-        .bind(file_data.phone_number)
-        .bind(file_data.remark)
-        .bind(file_data.file_condition)
-        .bind(file_data.number_of_pages)
-        .bind(file_data.location)
-        .bind(file_data.application_date)
-        .bind(file_data.roo_date)
-        .bind(file_data.coo_date)
-        .execute(db.get_ref())
-        .await;
-
-    let action = sqlx::query_as::<_, GetFileRecord>("SELECT * from file_tb where file_number = $1")
-       .bind(&result.file_number)
-       .fetch_one(db.get_ref())
-       .await
-       .unwrap();
-
-    let new_file_action_row = sqlx::query(r#"INSERT INTO file_actions (file_id, user_id,from_office_id, to_office_id, remarks)
-    VALUES (?,?,?,?,?)"#)
-    .bind(&action.id)
-    .bind(&action.user_id)
-    .bind(1)
-    .bind(1)
-    .bind("")
-    .execute(db.get_ref())
-    .await;
-
-    println!("new_file_action_row result: {:?}", new_file_action_row);
-    println!("Query result: {:?}", action.file_number);
-
-    match response {
-        Ok(_) => HttpResponse::Created().json(result),
-        Err(e) => {
-            println!("Database insert failed: {}", e);
-            //HttpResponse::InternalServerError().body(format!("Database error: {}", e))
-            HttpResponse::InternalServerError().json(json!({"Error":format!("Database error: {}", e)}))
+       
+       match file_number_exists {
+        Ok(Some(existing_file)) => {
+            utils::api_utils::updateFile(json_payload, db).await
+        }
+        Ok(None) => {
+             utils::api_utils::saveFile(json_payload, db).await
+        }
+        Err(err) => {
+            // Handle database error, if any
+            eprintln!("Error checking for file record: {:?}", err);
+            // Return an error response
+            HttpResponse::InternalServerError().json("Error occurred while accessing the database")
         }
     }
 }
+
+// #[post("/api/files")]
+// async fn save_new_file(file: web::Json<FileRecord>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+//     let file_data = file.into_inner(); // This gives you the actual FileRecord
+//     let result = file_data.clone(); // Insert the file record into the database (example)
+//
+//     let file_number_exists = sqlx::query_as::<_, GetFileRecord>("SELECT * from file_tb where file_number = $1")
+//        .bind(&result.file_number)
+//        .fetch_optional(db.get_ref())
+//        .await;
+//
+//     print!("File Payload {:?}",file_data);
+//     info!("File Payload {:?}",file_data);
+//
+//    if let Ok(Some(existing_file)) = file_number_exists {
+//             if(existing_file.file_number ==  file_data.file_number){
+//                // return   HttpResponse::InternalServerError().json(json!({"Error":format!("Database unique constraint failed: file number already exists")}))
+//                return HttpResponse::Conflict()
+//                 .json(serde_json::json!({
+//                     "status": 409,
+//                     "message": "Database unique constraint failed: The file number already exists."
+//                 }))
+//             }
+//     }
+//
+//
+//     let response = sqlx::query(r#"
+//     INSERT INTO file_tb(user_id,file_number, owner_name,lga, batch_number, rack_number,
+//      land_application_exists, c_of_o_letter_exists, r_of_o_letter_exists,
+//      lan_number,phone_number,remark,file_condition,number_of_pages,location,application_date,roo_date,coo_date)
+//      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+//      "#)
+//         .bind(file_data.user_id)
+//         .bind(file_data.file_number)
+//         .bind(file_data.owner_name)
+//         .bind(file_data.lga)
+//         .bind(file_data.batch_number)
+//         .bind(file_data.rack_number)
+//         .bind(file_data.land_application_exists)
+//         .bind(file_data.c_of_o_letter_exists)
+//         .bind(file_data.r_of_o_letter_exists)
+//         .bind(file_data.lan_number)
+//         .bind(file_data.phone_number)
+//         .bind(file_data.remark)
+//         .bind(file_data.file_condition)
+//         .bind(file_data.number_of_pages)
+//         .bind(file_data.location)
+//         .bind(file_data.application_date)
+//         .bind(file_data.roo_date)
+//         .bind(file_data.coo_date)
+//         .execute(db.get_ref())
+//         .await;
+//
+//     let action = sqlx::query_as::<_, GetFileRecord>("SELECT * from file_tb where file_number = $1")
+//        .bind(&result.file_number)
+//        .fetch_one(db.get_ref())
+//        .await
+//        .unwrap();
+//
+//     let new_file_action_row = sqlx::query(r#"INSERT INTO file_actions (file_id, user_id,from_office_id, to_office_id, remarks)
+//     VALUES (?,?,?,?,?)"#)
+//     .bind(&action.id)
+//     .bind(&action.user_id)
+//     .bind(1)
+//     .bind(1)
+//     .bind("")
+//     .execute(db.get_ref())
+//     .await;
+//
+//     println!("new_file_action_row result: {:?}", new_file_action_row);
+//     println!("Query result: {:?}", action.file_number);
+//
+//     match response {
+//         Ok(_) => HttpResponse::Created().json(result),
+//         Err(e) => {
+//             println!("Database insert failed: {}", e);
+//             //HttpResponse::InternalServerError().body(format!("Database error: {}", e))
+//             HttpResponse::InternalServerError().json(json!({"Error":format!("Database error: {}", e)}))
+//         }
+//     }
+// }
 
 #[get("/api/file/{file_no}")]
 async fn fetchFileByfileNumber(file_no: web::Path<String>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
@@ -249,7 +299,7 @@ async fn update_file(data: web::Json<GetFileRecord>, db: web::Data<Pool<Sqlite>>
         .bind(file_data.id)
        .execute(db.get_ref()) // Execute the query on the database
        .await;
-   match result {
+       match result {
         Ok(_) => HttpResponse::Ok().json("File updated successfully."),
         Err(e) => {
             eprintln!("Error updating user: {}", e);
@@ -267,7 +317,11 @@ async fn fetch_files(db: web::Data<Pool<Sqlite>>) -> impl Responder {
         .await;
 
     match response {
-        Ok(response) => web::Json(response),
+        Ok(response) => {
+            let output = utils::api_utils::transformFileRecord(response);
+            // web::Json(response)
+            web::Json(output)
+        },
         Err(_) => web::Json(vec![]),
     }
 }
@@ -323,7 +377,9 @@ async fn fetch_movements(path: web::Path<String>, db: web::Data<Pool<Sqlite>>) -
        .fetch_all(db.get_ref())
        .await
        .unwrap();
-   web::Json(result)
+   let output = utils::api_utils::transformMovement(result);
+   // web::Json(result)
+   web::Json(output)
 }
 
 #[get("/api/location/{id}")]
@@ -356,7 +412,9 @@ async fn fetch_locations(path: web::Path<String>, db: web::Data<Pool<Sqlite>>) -
        .fetch_all(db.get_ref())
        .await
        .unwrap();
-    web::Json(result)
+    let output = utils::api_utils::transformMovement(result);
+    // web::Json(result)
+    web::Json(output)
 }
 
 
@@ -454,6 +512,8 @@ async fn main() -> std::io::Result<()> {
             .service(fetch_movements)
             .service(fetch_locations)
             .service(update_file)
+            .service(getReport)
+
 
 
     })
