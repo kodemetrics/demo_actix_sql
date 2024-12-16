@@ -40,6 +40,19 @@ pub struct NewUser {
 }
 
 #[derive(FromRow,Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct NewUpdateUser {
+    #[serde(default)]
+    pub id: Option<i32>,
+    pub name: String,
+    pub email: String,
+    #[serde(default)] 
+    pub password: Option<String>,
+    pub staff_id: String,
+    pub office_id: i32,
+    pub role: String,
+}
+
+#[derive(FromRow,Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Login {
     pub email: String,
     pub password: String

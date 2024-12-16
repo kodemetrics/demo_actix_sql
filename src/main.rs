@@ -16,7 +16,7 @@ use actix_web::web::Data;
 use actix_web::{get,post,put,http, web, App, HttpRequest, HttpResponse, HttpServer,Responder};
 use actix_cors::Cors;
 use crate::models::error::APIError;
-use crate::models::user::{UserRoles, User,Login,NewUser,UpdateUser};
+use crate::models::user::{UserRoles, User,Login,NewUser,UpdateUser,NewUpdateUser};
 use crate::models::file_action::{FileAction, Movement};
 use crate::models::file_tb::{FileRecord,GetFileRecord};
 use crate::models::office::Office;
@@ -62,27 +62,55 @@ async fn auth_user(user: web::Json<Login>, db: web::Data<Pool<Sqlite>>) -> impl 
 }
 
 #[post("/api/users")]
-async fn save_new_user(user: web::Json<NewUser>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+async fn save_new_user(user: web::Json<NewUpdateUser>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+    let json_payload = user.clone();
     let new_user = user.into_inner();
     let result = new_user.clone();
-    let response = sqlx::query(r#"INSERT INTO users (name,email,password,staff_id,office_id,role)VALUES (?,?,?,?,?,?)
-     "#)
-        .bind(new_user.name)
-        .bind(new_user.email)
-        .bind(new_user.password)
-        .bind(new_user.staff_id)
-        .bind(new_user.office_id)
-        .bind(new_user.role)
-        .execute(db.get_ref())
-        .await;
-        match response {
-            Ok(_) => HttpResponse::Created().json(result),
-            Err(e) => {
-                println!("Database insert failed: {}", e);
-                HttpResponse::InternalServerError().json(json!({"Error":format!("Database error: {}", e)}))
-            }
+
+    let file_number_exists = sqlx::query_as::<_, User>("SELECT * from users where email = $1")
+       .bind(new_user.email)
+       .fetch_optional(db.get_ref())
+       .await;
+
+       match file_number_exists {
+        Ok(Some(existing_file)) => {
+            utils::api_utils::updateUser(json_payload, db).await
         }
+        Ok(None) => {
+             utils::api_utils::saveUser(json_payload, db).await
+        }
+        Err(err) => {
+            eprintln!("Error checking for file record: {:?}", err);
+            HttpResponse::InternalServerError().json("Error occurred while accessing the database")
+        }
+    }
 }
+
+// #[post("/api/users")]
+// async fn save_new_user(user: web::Json<NewUpdateUser>, db: web::Data<Pool<Sqlite>>) -> impl Responder {
+//     let json_payload = user.clone();
+//     let new_user = user.into_inner();
+//     let result = new_user.clone();
+//
+//     let response = sqlx::query(r#"INSERT INTO users (name,email,password,staff_id,office_id,role)VALUES (?,?,?,?,?,?)
+//      "#)
+//         .bind(new_user.name)
+//         .bind(new_user.email)
+//         .bind(new_user.password)
+//         .bind(new_user.staff_id)
+//         .bind(new_user.office_id)
+//         .bind(new_user.role)
+//         .execute(db.get_ref())
+//         .await;
+//         match response {
+//             Ok(_) => HttpResponse::Created().json(result),
+//             Err(e) => {
+//                 println!("Database insert failed: {}", e);
+//                 HttpResponse::InternalServerError().json(json!({"Error":format!("Database error: {}", e)}))
+//             }
+//         }
+// }
+
 
 #[get("/api/users")]
 async fn fetch_users(db: web::Data<Pool<Sqlite>>) -> impl Responder {
@@ -160,7 +188,7 @@ async fn save_new_file(file: web::Json<FileRecord>, db: web::Data<Pool<Sqlite>>)
        .bind(file_number)
        .fetch_optional(db.get_ref())
        .await;
-       
+
        match file_number_exists {
         Ok(Some(existing_file)) => {
             utils::api_utils::updateFile(json_payload, db).await

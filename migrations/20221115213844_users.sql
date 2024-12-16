@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
         role TEXT NOT NULL,
         staff_id TEXT NOT NULL,
         office_id INTEGER NOT NULL,
+        -- status TEXT DEFAULT 'enabled',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (office_id) REFERENCES office(id) ON DELETE CASCADE
 );

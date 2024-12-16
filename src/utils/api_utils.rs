@@ -1,6 +1,7 @@
 use actix_web::web::Data;
 use actix_web::{web,HttpRequest, HttpResponse, HttpServer,Responder};
 use crate::models::file_tb::{FileRecord,GetFileRecord};
+use crate::models::user::{UserRoles, User,Login,NewUser,UpdateUser,NewUpdateUser};
 use crate::models::file_action::{FileAction, Movement};
 use serde_json::{json, Value};
 use sqlx::{Pool,query,query_as, Sqlite};
@@ -125,6 +126,51 @@ pub  fn transformMovement(data: Vec<Movement>) -> Vec<Movement>  {
      record
    }).collect();
    output
+}
+
+
+pub async fn saveUser(user: NewUpdateUser, db: web::Data<Pool<Sqlite>>) -> HttpResponse {
+    // let new_user = user.into_inner();
+    let new_user = user;
+    let result = new_user.clone();
+    let response = sqlx::query(r#"INSERT INTO users (name,email,password,staff_id,office_id,role)VALUES (?,?,?,?,?,?)
+     "#)
+        .bind(new_user.name)
+        .bind(new_user.email)
+        .bind(new_user.password)
+        .bind(new_user.staff_id)
+        .bind(new_user.office_id)
+        .bind(new_user.role)
+        .execute(db.get_ref())
+        .await;
+        match response {
+            Ok(_) => HttpResponse::Created().json(result),
+            Err(e) => {
+                println!("Database insert failed: {}", e);
+                HttpResponse::InternalServerError().json(json!({"Error":format!("Database error: {}", e)}))
+            }
+        }
+}
+
+pub async fn updateUser(data: NewUpdateUser, db: web::Data<Pool<Sqlite>>) -> HttpResponse {
+    // let user = data.into_inner();
+    let user = data;
+    let sql = r#"UPDATE users SET name = $1,email = $2,password = $3,role = $4 WHERE id = $5"#;
+    let result = query(sql)
+       .bind(user.name)
+       .bind(user.email)
+       .bind(user.password)
+       .bind(user.role)
+       .bind(user.id)
+       .execute(db.get_ref()) // Execute the query on the database
+       .await;
+   match result {
+        Ok(_) => HttpResponse::Ok().json("User updated successfully."),
+        Err(e) => {
+            eprintln!("Error updating user: {}", e);
+            HttpResponse::InternalServerError().json("Failed to update user.")
+        }
+    }
 }
 
 
